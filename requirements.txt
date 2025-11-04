@@ -1,0 +1,12 @@
+streamlit
+PyMuPDF
+reportlab
+Pillow
+numpy
+numpy
+opencv-python-headless
+Pillow
+PyMuPDF
+reportlab
+streamlit
+yomitoku
