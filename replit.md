@@ -1,69 +1,125 @@
-# Yomitoku スクリーンリーダー最適化プロジェクト
-
-## 概要
-日本語の縦書き・横書き文書画像から、スクリーンリーダーで正しく読み上げられるサーチャブルPDFを生成するツールです。
+# Yomitoku Searchable PDF Improvement - Furigana Filtering
 
 ## プロジェクトの目的
-- 日本語フリガナ付き文書をOCR処理
-- フリガナと基本テキストを分離
-- スクリーンリーダーが基本テキストのみを読み上げるPDFを生成
-- 縦書き・横書き両方に対応
 
-## 技術スタック
-- **OCRエンジン**: yomitoku (日本語特化Document AI)
-- **PDF生成**: PyMuPDF, reportlab
-- **UI**: Streamlit
-- **画像処理**: Pillow, OpenCV
-- **言語**: Python 3.11
+yomitokuの`searchable_pdf.py`を改善し、日本語のフリガナ（ルビ）をスクリーンリーダーから除外する機能を実装しました。
 
-## プロジェクト構造
-```
-/
-├── app.py                      # Streamlit メインアプリ
-├── src/
-│   ├── ocr_processor.py        # yomitoku OCR処理
-│   ├── furigana_analyzer.py    # フリガナ検出・分離アルゴリズム
-│   └── pdf_generator.py        # スクリーンリーダー対応PDF生成
-├── requirements.txt
-├── output/                     # 生成されたPDF保存先
-└── uploaded_images/            # アップロード画像保存先
-```
+## 問題点と解決策
 
-## 最新の変更
-- 2025-11-04: プロジェクト初期設定完了
-- 2025-11-04: スクリーンリーダー最適化PDF生成機能の実装完了
-- 2025-11-04: フリガナ検出アルゴリズムの実装完了
-- 2025-11-04: 日本語フォント対応（Noto Sans CJK）完了
+### 元の問題
+yomitokuの元の実装では、OCRで検出されたすべてのテキスト（フリガナと基本テキスト）が透明テキストレイヤーに配置されるため、スクリーンリーダーがフリガナと基本テキストの**両方**を読み上げてしまいます。
 
-## アーキテクチャの決定
-- **PDF生成方式**: PIL ImageDrawでフリガナと基本テキストを画像として描画
-  - 視覚レイヤー: 画像（テキストオブジェクトではない）→スクリーンリーダーが読まない
-  - 音声レイヤー: 不可視テキスト（render_mode=3）→スクリーンリーダーが読む
-- **フリガナ検出**: インデックスベースのトラッキングでKeyError回避
-  - フォントサイズ8px未満、ひらがな・カタカナのみで候補検出
-  - 縦書き・横書き対応の位置関係分析
-- **日本語フォント**: Noto Sans CJK JPをfc-matchで動的に検出・使用
+例：「完璧」→「かんぺき」→「完璧」のように二重に読まれる
 
-## システム依存関係
-- **Noto Sans CJK フォント**: 日本語文字の表示に必須
-  - インストール済み: `noto-fonts-cjk-sans`
-  - PDF生成時にfc-matchで自動検出
+### 実装した解決策
+フリガナを自動検出し、透明テキストレイヤーから除外：
+- **視覚レイヤー**：元の画像にフリガナと基本テキストが表示される
+- **音声レイヤー**（スクリーンリーダー用）：基本テキストのみが含まれる
+- 結果：スクリーンリーダーは「完璧」を「かんぺき」と一度だけ読み上げる
 
 ## 実装の詳細
 
-### フリガナ検出アルゴリズム
-1. 小さなフォントサイズ（8px未満）のテキストブロックを検出
-2. ひらがな・カタカナのみで構成されているか確認
-3. 近接する大きなテキストブロック（基本テキスト）を探索
-4. 縦書き・横書きに応じた位置関係で紐付け
+### 変更されたファイル
+`yomitoku_repo/src/yomitoku/utils/searchable_pdf.py`
 
-### PDF生成アルゴリズム
-1. PIL ImageDrawでフリガナと基本テキストを画像に描画
-2. 画像をPDFページに埋め込み（視覚的に表示、スクリーンリーダー非対応）
-3. 基本テキストのみを不可視テキストレイヤー（render_mode=3）に配置
-4. スクリーンリーダーは不可視レイヤーのテキストのみを読み上げ
+### 追加された機能
+
+1. **`_is_kana_only(text)`**: ひらがな・カタカナのみで構成されているかチェック
+2. **`_is_furigana(text, font_size, bbox_height, bbox_width)`**: 複数の基準でフリガナを判定
+   - フォントサイズ < 8pt
+   - かな文字のみ
+   - バウンディングボックス < 12px
+3. **`create_searchable_pdf()`の修正**: フリガナを検出した場合、透明テキストレイヤーから除外
+
+## アーキテクチャレビュー結果
+
+Architect Agent による評価：**Pass** ✅
+
+### 主要な発見
+- フリガナ検出ロジックが正しく動作
+- 既存コードとの統合が適切
+- 視覚レイヤーを保持しながらスクリーンリーダーレイヤーからフリガナを除外
+- 基本テキストが誤って除外されることはない
+
+### 将来の改善提案
+1. 閾値を設定可能にする
+2. 回帰テストを追加
+3. 位置ベースのチェックで精度向上
+
+## 技術的背景
+
+### PDFの構造
+1. **視覚レイヤー（画像）**: 元の画像が描画され、フリガナと基本テキストが両方表示される
+2. **音声レイヤー（透明テキスト）**: 基本テキストのみが透明で配置され、スクリーンリーダーが読み上げる
+
+### フリガナ検出アルゴリズム
+| 特徴 | フリガナ | 基本テキスト |
+|------|---------|------------|
+| フォントサイズ | < 8pt | ≥ 8pt |
+| 文字種別 | かな文字のみ | 漢字を含む |
+| バウンディングボックス | 小さい (< 12px) | 大きい (≥ 12px) |
+
+## ファイル構成
+
+```
+/
+├── yomitoku_repo/
+│   └── src/yomitoku/utils/
+│       └── searchable_pdf.py  # 改善版（フリガナフィルタリング機能付き）
+├── YOMITOKU_IMPROVEMENT.md    # 詳細ドキュメント（日英）
+└── replit.md                  # このファイル
+```
 
 ## 使用方法
-```bash
-streamlit run app.py
+
+改善版は既存のyomitoku APIと完全に互換性があります：
+
+```python
+from yomitoku import DocumentAnalyzer
+from yomitoku.utils.searchable_pdf import create_searchable_pdf
+import cv2
+
+analyzer = DocumentAnalyzer(configs={}, device="cpu")
+results, ocr_vis = analyzer("path/to/image.jpg")
+
+image = cv2.imread("path/to/image.jpg")
+create_searchable_pdf(
+    images=[image],
+    ocr_results=[results],
+    output_path="output.pdf"
+)
 ```
+
+または、CLIから：
+
+```bash
+yomitoku path/to/image.jpg --format pdf --output output.pdf
+```
+
+## テスト方法
+
+1. yomitokuを使用して日本語文書（フリガナ付き）からPDFを生成
+2. スクリーンリーダー（NVDA、JAWS、VoiceOverなど）で開いて確認
+3. 期待される動作：
+   - ✅ スクリーンリーダーが基本テキスト（漢字など）のみを読み上げる
+   - ✅ フリガナは視覚的に表示されるが、読み上げられない
+   - ✅ 「完璧」は「かんぺき」と一度だけ読まれる
+
+## 対応状況
+- ✅ 縦書きテキスト対応
+- ✅ 横書きテキスト対応
+- ✅ 既存のyomitoku API完全互換
+- ✅ CLIツール対応
+
+## 最新の変更履歴
+- 2025-11-04: yomitoku searchable_pdf.pyにフリガナフィルタリング機能を実装
+- 2025-11-04: フリガナ検出アルゴリズム（`_is_kana_only`, `_is_furigana`）を追加
+- 2025-11-04: Architect Agentによるコードレビュー完了（Pass）
+- 2025-11-04: 詳細ドキュメント（YOMITOKU_IMPROVEMENT.md）を作成
+
+## ライセンス
+この改善は、yomitokuの元のライセンス（CC BY-NC-SA 4.0）に従います。
+
+## 参考資料
+- [yomitoku GitHub](https://github.com/Utakata/yomitoku)
+- [YOMITOKU_IMPROVEMENT.md](./YOMITOKU_IMPROVEMENT.md) - 詳細ドキュメント
