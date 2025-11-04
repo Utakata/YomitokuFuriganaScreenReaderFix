@@ -10,3 +10,8 @@ PyMuPDF
 reportlab
 streamlit
 yomitoku
+jaconv
+numpy
+pillow
+pydantic
+reportlab

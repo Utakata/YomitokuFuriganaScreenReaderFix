@@ -1,4 +1,5 @@
 import os
+import re
 
 from PIL import Image
 from io import BytesIO
@@ -61,6 +62,48 @@ def to_full_width(text):
     return jaconv_text
 
 
+def _is_kana_only(text):
+    """
+    Check if text contains only hiragana, katakana, and Japanese punctuation.
+    Returns True if the text is likely furigana.
+    """
+    # Pattern: hiragana, katakana, small kana, Japanese punctuation, whitespace
+    kana_pattern = re.compile(r'^[\u3040-\u309F\u30A0-\u30FF\u3001-\u303F\s]+$')
+    return bool(kana_pattern.match(text))
+
+
+def _is_furigana(text, font_size, bbox_height, bbox_width):
+    """
+    Determine if a text element is furigana based on multiple criteria:
+    1. Font size is small (< 8pt)
+    2. Text contains only kana characters
+    3. Bounding box is small relative to typical text
+    
+    Args:
+        text: The text content
+        font_size: Calculated font size
+        bbox_height: Height of bounding box
+        bbox_width: Width of bounding box
+    
+    Returns:
+        bool: True if the text is likely furigana
+    """
+    # Criterion 1: Small font size (typical furigana is < 8pt)
+    if font_size >= 8:
+        return False
+    
+    # Criterion 2: Must be kana-only
+    if not _is_kana_only(text):
+        return False
+    
+    # Criterion 3: Small bounding box (furigana is typically small)
+    # For horizontal text, height < 12px; for vertical, width < 12px
+    if bbox_height < 12 or bbox_width < 12:
+        return True
+    
+    return False
+
+
 def create_searchable_pdf(images, ocr_results, output_path, font_path=None):
     if font_path is None:
         font_path = FONT_PATH
@@ -96,6 +139,11 @@ def create_searchable_pdf(images, ocr_results, output_path, font_path=None):
                 font_size = _calc_font_size(text, bbox_height, bbox_width)
             else:
                 font_size = _calc_font_size(text, bbox_width, bbox_height)
+
+            # Skip furigana from the accessible text layer
+            # Furigana will remain visible in the image layer but won't be read by screen readers
+            if _is_furigana(text, font_size, bbox_height, bbox_width):
+                continue
 
             c.setFont("MPLUS1p-Medium", font_size)
             c.setFillColorRGB(1, 1, 1, alpha=0)  # 透明

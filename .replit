@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["freetype", "glibcLocales", "gumbo", "harfbuzz", "jbig2dec", "lcms2", "libimagequant", "libjpeg", "libjpeg_turbo", "libtiff", "libwebp", "libxcrypt", "mupdf", "openjpeg", "swig", "tcl", "tk", "xcbuild", "zlib", "noto-fonts-cjk-sans"]
+packages = ["freetype", "glibcLocales", "gumbo", "harfbuzz", "jbig2dec", "lcms2", "libimagequant", "libjpeg", "libjpeg_turbo", "libtiff", "libwebp", "libxcrypt", "mupdf", "noto-fonts-cjk-sans", "openjpeg", "swig", "tcl", "tk", "xcbuild", "zlib", "mesa", "xorg.libX11"]
 
 [workflows]
 runButton = "Project"
