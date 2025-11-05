@@ -5,3 +5,10 @@ numpy
 jaconv
 lxml
 streamlit
+jaconv
+lxml
+numpy
+pillow
+reportlab
+streamlit
+yomitoku
