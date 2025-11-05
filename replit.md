@@ -1,125 +1,207 @@
-# Yomitoku Searchable PDF Improvement - Furigana Filtering
+# サーチャブルEPUB変換ツール
 
 ## プロジェクトの目的
 
-yomitokuの`searchable_pdf.py`を改善し、日本語のフリガナ（ルビ）をスクリーンリーダーから除外する機能を実装しました。
+画像ベースのEPUBを、検索とコピー&ペーストが可能な**サーチャブルEPUB（固定レイアウト）**に変換するPythonツールです。yomitokuの`searchable_pdf.py`のロジックを活用し、透明なテキストレイヤーをEPUBに追加します。
 
-## 問題点と解決策
+### 関連プロジェクト
 
-### 元の問題
-yomitokuの元の実装では、OCRで検出されたすべてのテキスト（フリガナと基本テキスト）が透明テキストレイヤーに配置されるため、スクリーンリーダーがフリガナと基本テキストの**両方**を読み上げてしまいます。
+このプロジェクトは、yomitokuの`searchable_pdf.py`改善（フリガナフィルタリング機能）の成果を活用しています。
 
-例：「完璧」→「かんぺき」→「完璧」のように二重に読まれる
+## 特徴
 
-### 実装した解決策
-フリガナを自動検出し、透明テキストレイヤーから除外：
-- **視覚レイヤー**：元の画像にフリガナと基本テキストが表示される
-- **音声レイヤー**（スクリーンリーダー用）：基本テキストのみが含まれる
-- 結果：スクリーンリーダーは「完璧」を「かんぺき」と一度だけ読み上げる
+### 主要機能
+- ✅ **元のレイアウトを完全に保持**: 画像の見た目はそのまま維持
+- ✅ **透明テキストレイヤー**: OCRで取得したテキストを透明で正確に配置
+- ✅ **縦書き・横書き対応**: 日本語の縦書きテキストにも対応
+- ✅ **高精度OCR**: yomitoku DocumentAnalyzerを使用
+- ✅ **フリガナフィルタリング**: スクリーンリーダーがフリガナを読まない
+
+### EPUBの構造
+- **背景レイヤー**: 元の画像が表示される
+- **テキストレイヤー**: OCRテキストが透明（`color: transparent`）で絶対座標に配置される
+- **固定レイアウト**: リフロー型に変換せず、元のレイアウトを維持
 
 ## 実装の詳細
 
-### 変更されたファイル
-`yomitoku_repo/src/yomitoku/utils/searchable_pdf.py`
+### プロジェクト構造
 
-### 追加された機能
+```
+.
+├── src/
+│   └── epub_searchable/
+│       ├── __init__.py
+│       ├── utils.py           # 共通ユーティリティ（yomitoku searchable_pdf.pyから移植）
+│       ├── epub_handler.py    # EPUB展開・再圧縮（ZIP処理）
+│       ├── ocr_processor.py   # yomitoku DocumentAnalyzer統合
+│       ├── html_processor.py  # HTMLテキストレイヤー生成
+│       └── main.py            # メインスクリプト
+├── app.py                     # Streamlitアプリ
+├── requirements.txt
+└── README.md
+```
 
-1. **`_is_kana_only(text)`**: ひらがな・カタカナのみで構成されているかチェック
-2. **`_is_furigana(text, font_size, bbox_height, bbox_width)`**: 複数の基準でフリガナを判定
-   - フォントサイズ < 8pt
-   - かな文字のみ
-   - バウンディングボックス < 12px
-3. **`create_searchable_pdf()`の修正**: フリガナを検出した場合、透明テキストレイヤーから除外
+### 主要モジュール
 
-## アーキテクチャレビュー結果
+1. **`utils.py`**: yomitokuの`searchable_pdf.py`から移植
+   - `_poly2rect()`: 座標の矩形化
+   - `to_full_width()`: 縦書き用の全角変換
+   - `_calc_font_size()`: フォントサイズ計算
+   - `_is_furigana()`: フリガナ判定
 
-Architect Agent による評価：**Pass** ✅
+2. **`epub_handler.py`**: EPUB処理
+   - EPUB展開（ZIPファイルとして）
+   - HTMLファイル検出
+   - EPUB再圧縮（mimetypeを最初に非圧縮で追加）
 
-### 主要な発見
-- フリガナ検出ロジックが正しく動作
-- 既存コードとの統合が適切
-- 視覚レイヤーを保持しながらスクリーンリーダーレイヤーからフリガナを除外
-- 基本テキストが誤って除外されることはない
+3. **`ocr_processor.py`**: OCR処理
+   - yomitoku DocumentAnalyzerでOCR実行
+   - `results.words`（テキスト、座標、方向）を取得
 
-### 将来の改善提案
-1. 閾値を設定可能にする
-2. 回帰テストを追加
-3. 位置ベースのチェックで精度向上
+4. **`html_processor.py`**: HTML生成
+   - 元のHTMLから画像参照を抽出
+   - 背景レイヤー（元の画像）を配置
+   - テキストレイヤー（透明な`<span>`）を絶対座標に配置
+   - 縦書き対応（`writing-mode: vertical-rl`）
+
+## 処理フロー
+
+1. **EPUB展開**: 入力EPUBをZIPとして展開
+2. **HTMLファイル走査**: `.html` / `.xhtml` ファイルを検出
+3. **画像参照取得**: `<img>` や `<svg><image>` から画像パスを取得
+4. **OCR処理**: yomitokuで画像を解析し、`results.words` を取得
+5. **テキストレイヤー生成**:
+   - 元の画像を背景レイヤーとして配置
+   - OCR結果を透明な `<span>` タグで絶対座標に配置
+   - 縦書き対応 (`writing-mode: vertical-rl`)
+   - フリガナフィルタリング適用
+6. **EPUB再圧縮**: 処理済HTMLをEPUBとして再圧縮
 
 ## 技術的背景
 
-### PDFの構造
-1. **視覚レイヤー（画像）**: 元の画像が描画され、フリガナと基本テキストが両方表示される
-2. **音声レイヤー（透明テキスト）**: 基本テキストのみが透明で配置され、スクリーンリーダーが読み上げる
+### 生成されるHTML構造
 
-### フリガナ検出アルゴリズム
+```html
+<body>
+  <!-- 背景レイヤー: 元の画像 -->
+  <div class="background-layer">
+    <img src="../images/00002.jpeg" width="1395" height="2048" alt="Page image"/>
+  </div>
+  
+  <!-- テキストレイヤー: 透明なOCRテキスト -->
+  <div class="text-layer" style="width: 1395px; height: 2048px; color: transparent;">
+    <span style="position: absolute; left: 100px; top: 200px; font-size: 16px;">
+      完璧
+    </span>
+    <span style="position: absolute; left: 120px; top: 180px; font-size: 6px; writing-mode: vertical-rl;">
+      かんぺき
+    </span>
+    <!-- フリガナは検出されて除外される -->
+  </div>
+</body>
+```
+
+### フリガナフィルタリング
+
+yomitokuの改善版searchable_pdf.pyのロジックを使用：
+
 | 特徴 | フリガナ | 基本テキスト |
 |------|---------|------------|
 | フォントサイズ | < 8pt | ≥ 8pt |
 | 文字種別 | かな文字のみ | 漢字を含む |
 | バウンディングボックス | 小さい (< 12px) | 大きい (≥ 12px) |
 
+→ フリガナを検出し、HTMLテキストレイヤーから除外
+
 ## ファイル構成
 
 ```
 /
+├── src/
+│   └── epub_searchable/       # メインモジュール
 ├── yomitoku_repo/
 │   └── src/yomitoku/utils/
 │       └── searchable_pdf.py  # 改善版（フリガナフィルタリング機能付き）
-├── YOMITOKU_IMPROVEMENT.md    # 詳細ドキュメント（日英）
+├── app.py                     # Streamlitアプリ
+├── requirements.txt
+├── README.md
+├── YOMITOKU_IMPROVEMENT.md    # yomitoku改善の詳細ドキュメント
 └── replit.md                  # このファイル
 ```
 
 ## 使用方法
 
-改善版は既存のyomitoku APIと完全に互換性があります：
-
-```python
-from yomitoku import DocumentAnalyzer
-from yomitoku.utils.searchable_pdf import create_searchable_pdf
-import cv2
-
-analyzer = DocumentAnalyzer(configs={}, device="cpu")
-results, ocr_vis = analyzer("path/to/image.jpg")
-
-image = cv2.imread("path/to/image.jpg")
-create_searchable_pdf(
-    images=[image],
-    ocr_results=[results],
-    output_path="output.pdf"
-)
-```
-
-または、CLIから：
+### Streamlitアプリ（推奨）
 
 ```bash
-yomitoku path/to/image.jpg --format pdf --output output.pdf
+streamlit run app.py
+```
+
+1. EPUBファイルをアップロード
+2. 「変換開始」ボタンをクリック
+3. サーチャブルEPUBをダウンロード
+
+### コマンドライン
+
+```bash
+python -m src.epub_searchable.main input.epub output.epub [font.ttf]
+```
+
+### Pythonスクリプト
+
+```python
+from src.epub_searchable.main import convert_epub_to_searchable
+
+convert_epub_to_searchable(
+    input_epub="input.epub",
+    output_epub="output_searchable.epub",
+    font_path=None  # Optional: path to .ttf font
+)
 ```
 
 ## テスト方法
 
-1. yomitokuを使用して日本語文書（フリガナ付き）からPDFを生成
-2. スクリーンリーダー（NVDA、JAWS、VoiceOverなど）で開いて確認
-3. 期待される動作：
-   - ✅ スクリーンリーダーが基本テキスト（漢字など）のみを読み上げる
-   - ✅ フリガナは視覚的に表示されるが、読み上げられない
-   - ✅ 「完璧」は「かんぺき」と一度だけ読まれる
+### 入力EPUB要件
+- 画像ベースのEPUB（固定レイアウト）
+- HTMLファイルが`<img>`または`<svg><image>`で画像を参照
+- 画像ファイルが`images/`フォルダに存在
+
+### 検証方法
+1. 画像ベースのEPUBを変換
+2. 出力EPUBをEPUBリーダーで開く
+3. テキスト検索が機能することを確認
+4. テキストをコピー&ペーストできることを確認
+5. スクリーンリーダーで開いて音声読み上げを確認
 
 ## 対応状況
 - ✅ 縦書きテキスト対応
 - ✅ 横書きテキスト対応
-- ✅ 既存のyomitoku API完全互換
+- ✅ フリガナフィルタリング
+- ✅ EPUB固定レイアウト維持
+- ✅ Streamlit Webアプリ
 - ✅ CLIツール対応
 
 ## 最新の変更履歴
-- 2025-11-04: yomitoku searchable_pdf.pyにフリガナフィルタリング機能を実装
-- 2025-11-04: フリガナ検出アルゴリズム（`_is_kana_only`, `_is_furigana`）を追加
-- 2025-11-04: Architect Agentによるコードレビュー完了（Pass）
-- 2025-11-04: 詳細ドキュメント（YOMITOKU_IMPROVEMENT.md）を作成
+- 2025-11-05: サーチャブルEPUB変換ツールを実装
+- 2025-11-05: yomitokuのsearchable_pdf.pyロジックをEPUBに応用
+- 2025-11-05: Streamlit Webアプリを作成
+- 2025-11-05: フリガナフィルタリング機能を統合
+- 2025-11-04: yomitoku searchable_pdf.pyにフリガナフィルタリング機能を実装（完了）
+
+## 依存関係
+
+- yomitoku (OCRエンジン)
+- pillow (画像処理)
+- reportlab (フォントサイズ計算)
+- numpy (数値計算)
+- jaconv (全角変換)
+- lxml (HTML/XML解析)
+- streamlit (Webアプリ)
 
 ## ライセンス
-この改善は、yomitokuの元のライセンス（CC BY-NC-SA 4.0）に従います。
+CC BY-NC-SA 4.0（yomitokuのライセンスに準拠）
 
 ## 参考資料
 - [yomitoku GitHub](https://github.com/Utakata/yomitoku)
-- [YOMITOKU_IMPROVEMENT.md](./YOMITOKU_IMPROVEMENT.md) - 詳細ドキュメント
+- [YOMITOKU_IMPROVEMENT.md](./YOMITOKU_IMPROVEMENT.md) - yomitoku改善の詳細ドキュメント
+- [README.md](./README.md) - サーチャブルEPUB変換ツールの詳細
