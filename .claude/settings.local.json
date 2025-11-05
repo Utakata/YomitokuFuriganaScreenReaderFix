@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C yomitoku_repo diff)",
+      "Bash(git -C yomitoku_repo log -3 --oneline)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

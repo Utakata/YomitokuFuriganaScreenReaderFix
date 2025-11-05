@@ -1,0 +1,101 @@
+【タスク指示書】画像EPUBのサーチャブルEPUB（固定レイアウト）への変換
+ペルソナ: あなたは、PythonとEPUBの構造、およびAIライブラリ yomitoku に精通した開発エキスパートです。
+
+タスク (T): 画像ベースのEPUBファイルを入力とし、元のレイアウト（見た目）を完全に保持したまま、検索とコピー＆ペーストが可能な「サーチャブルEPUB」（固定レイアウト）を生成するPythonスクリプトを作成してください。
+
+コンテキスト (C): 実行に必要なすべての情報
+1. 目的と重要要件
+目的: 元の画像（例: 00002.jpeg）の見た目は完全に維持する必要があります。
+
+実現方法: OCRで取得したテキストを、元の画像の上に「透明なテキストレイヤー」としてCSS（position: absolute）で正確に配置します。
+
+禁止事項: リフロー型（テキスト主体）のEPUBに変換してはいけません。レイアウトが崩れるためです。
+
+2. 入力EPUBの構造（エンティティ e1）
+EPUBはZIPアーカイブです。
+
+text/ フォルダ内に part0002.html のようなHTMLファイルが含まれています。
+
+このHTMLファイルはテキストを持たず、以下のように <svg> と <image> タグ（または単純な <img> タグ）を使って、images/ フォルダ内のページ画像を参照しているだけです。
+
+part0002.html の構造例:
+
+XML
+
+<body ...>
+  <svg ... viewBox="0 0 1395 2048">
+    <image width="1395" height="2048" xlink:href="../images/00002.jpeg" .../>
+  </svg>
+</body>
+3. 使用するAIエンジン（エンティティ e2）
+ライブラリ: yomitoku
+
+中核モジュール: yomitoku.DocumentAnalyzer
+
+取得する情報: DocumentAnalyzer で画像（00002.jpeg）を解析し、results.words を取得します。ここには、個々の単語のテキスト（content）、座標（points）、縦書き/横書き（direction）が含まれています。
+
+4. 参照すべきロジック（エンティティ e3）
+yomitoku には、このタスクと非常に類似した「サーチャブルPDF」を作成する機能が既に存在します。
+
+src/yomitoku/utils/searchable_pdf.py のロジックを応用してください。
+
+応用する主要関数:
+
+_poly2rect(points): 座標の矩形（bbox）化。
+
+to_full_width(text): 縦書き用の全角変換。
+
+_calc_font_size(...): bbox にテキストを収めるためのフォントサイズ計算。
+
+注意: この関数は reportlab.pdfbase.pdfmetrics.stringWidth に依存しています。作成するスクリプトが reportlab に依存して構いません（フォントパスの指定も必要です）。
+
+Color(..., alpha=0): PDFでの透明化ロジック。HTMLでは color: transparent; に相当します。
+
+実行 (f_context): 期待するスクリプトの処理フロー
+上記のコンテキスト (C) とタスク (T) に基づき、以下のステップを実行するPythonスクリプトを生成してください。
+
+入力: input.epub のパス、 output.epub のパス。
+
+依存ライブラリ: yomitoku, pillow, reportlab, numpy, jaconv。
+
+初期化: yomitoku.DocumentAnalyzer を初期化します。
+
+EPUB展開: input.epub を一時ディレクトリAに展開（unzip）します。
+
+ファイル走査: 一時ディレクトリA内のファイルを再帰的に走査します。
+
+HTML処理（ループ内）:
+
+ファイルが .html または .xhtml の場合：
+
+a. ファイルをXML/HTMLとしてパースします（xlink などの名前空間を考慮）。
+
+b. 参照されているページ画像のパス（例: ../images/00002.jpeg）を特定します（<img> と <svg>/<image> の両方に対応）。
+
+c. 画像の絶対パスを解決し、PIL で開き、yomitoku の DocumentAnalyzer に渡して results を取得します。
+
+d. 元のHTMLの <body> タグの中身をすべてクリアします。
+
+e. <body> 内に、以下の2層構造を再構築します。
+
+背景レイヤー: 元の画像（../images/00002.jpeg）を参照する <img> タグを配置。
+
+テキストレイヤー: results.words をループ処理し、各単語を <span> タグとして絶対座標（position: absolute; left: ...; top: ...;）に配置します。
+
+f. CSSスタイリング:
+
+テキストレイヤー全体に color: transparent; を適用します。
+
+各 <span> に、_calc_font_size で計算した font-size を適用します。
+
+word.direction == "vertical" の場合は to_full_width でテキストを変換し、CSS writing-mode: vertical-rl; を適用します。
+
+ファイル書き込み:
+
+処理済HTML: 変更されたHTML（XHTML）文字列を、一時ディレクトリB（出力用）の対応するパスに保存します。
+
+その他ファイル: .html 以外のファイル（mimetype, META-INF/, images/, styles/ など）は、一時ディレクトリAからBへそのままコピーします。
+
+EPUB再圧縮: 一時ディレクトリBの内容を output.epub としてZIP圧縮します（mimetype ファイルは非圧縮で最初に追加）。
+
+クリーンアップ: 一時ディレクトリAとBを削除します。
