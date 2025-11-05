@@ -1,0 +1,7 @@
+yomitoku
+pillow
+reportlab
+numpy
+jaconv
+lxml
+streamlit
